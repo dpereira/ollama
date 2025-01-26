@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"golang.org/x/sync/errgroup"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -25,8 +26,6 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/ollama/ollama/api"
 	"github.com/ollama/ollama/discover"
 	"github.com/ollama/ollama/envconfig"
@@ -368,6 +367,7 @@ func (s *Server) GenerateHandler(c *gin.Context) {
 }
 
 func (s *Server) EmbedHandler(c *gin.Context) {
+	fmt.Println("EmbedHandler")
 	checkpointStart := time.Now()
 	var req api.EmbedRequest
 	err := c.ShouldBindJSON(&req)
@@ -461,6 +461,12 @@ func (s *Server) EmbedHandler(c *gin.Context) {
 		input[i] = s
 	}
 
+	/*embeddings := make([][]float32, len(input))
+	for i, text := range input {
+		embedding, _ := r.Embedding(c.Request.Context(), text)
+		embeddings[i] = normalize(embedding)
+	}*/
+
 	var g errgroup.Group
 	embeddings := make([][]float32, len(input))
 	for i, text := range input {
@@ -469,6 +475,8 @@ func (s *Server) EmbedHandler(c *gin.Context) {
 			if err != nil {
 				return err
 			}
+			has_zeroes := slices.Contains(embedding, float32(0))
+			fmt.Printf("EmbedHandler -> Has zeroes: %t\n", has_zeroes)
 			embeddings[i] = normalize(embedding)
 			return nil
 		})

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -300,6 +301,7 @@ func flushPending(seq *Sequence) bool {
 }
 
 func (s *Server) removeSequence(seqIndex int, reason string) {
+	fmt.Printf("Removing sequence %d\n", seqIndex)
 	seq := s.seqs[seqIndex]
 
 	flushPending(seq)
@@ -339,7 +341,9 @@ func (s *Server) run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		default:
+			fmt.Println("Into processing batch")
 			err := s.processBatch(tokenBatch, embedBatch)
+			fmt.Println("Done processing batch")
 			if err != nil {
 				panic(err)
 			}
@@ -368,9 +372,11 @@ func (s *Server) processBatch(tokenBatch *llama.Batch, embedBatch *llama.Batch) 
 	crossAttention := false
 
 	seqIdx := s.nextSeq - 1
+	fmt.Println(len(s.seqs))
 	for range s.seqs {
 		seqIdx = (seqIdx + 1) % len(s.seqs)
 		seq := s.seqs[seqIdx]
+		fmt.Printf("Processing %d\n", seqIdx)
 
 		if seq == nil {
 			continue
@@ -404,6 +410,7 @@ func (s *Server) processBatch(tokenBatch *llama.Batch, embedBatch *llama.Batch) 
 				if !embedding {
 					batch = tokenBatch
 				} else {
+					fmt.Println("This is an embed batch")
 					batch = embedBatch
 					seq.crossAttention = s.image.NeedCrossAttention(input)
 				}
@@ -445,6 +452,7 @@ func (s *Server) processBatch(tokenBatch *llama.Batch, embedBatch *llama.Batch) 
 
 	for i, seq := range s.seqs {
 		if seq == nil {
+			fmt.Printf("Skipping sequence %d\n", i)
 			continue
 		}
 
@@ -467,12 +475,15 @@ func (s *Server) processBatch(tokenBatch *llama.Batch, embedBatch *llama.Batch) 
 		// if done processing the prompt, generate an embedding and return
 		if seq.embeddingOnly {
 			embed := s.lc.GetEmbeddingsSeq(seq.cache.Id)
+			fmt.Printf("GenEmbeddings 1")
 			if embed == nil {
+				fmt.Printf("GenEmbeddings 2")
 				embed = s.lc.GetEmbeddingsIth(seq.iBatch)
 			}
 
 			seq.embedding <- embed
 			s.removeSequence(i, "")
+			fmt.Println("Finished embeddings")
 			continue
 		}
 
@@ -494,6 +505,7 @@ func (s *Server) processBatch(tokenBatch *llama.Batch, embedBatch *llama.Batch) 
 		}
 
 		seq.inputs = []input{{token: token}}
+		fmt.Printf("Inputs: %v\n", seq.inputs)
 
 		seq.pendingResponses = append(seq.pendingResponses, piece)
 		sequence := strings.Join(seq.pendingResponses, "")
@@ -533,6 +545,7 @@ func (s *Server) processBatch(tokenBatch *llama.Batch, embedBatch *llama.Batch) 
 		}
 
 		if !flushPending(seq) {
+			fmt.Println("Flushing pending sequence")
 			s.removeSequence(i, "connection")
 		}
 	}
@@ -766,8 +779,11 @@ func (s *Server) embeddings(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, fmt.Sprintf("Failed to load cache: %v", err), http.StatusInternalServerError)
 				return
 			}
+			fmt.Printf("Adding sequence %d\n", i)
 			s.seqs[i] = seq
+			fmt.Printf("Added sequence %d Signalling embedding added\n", i)
 			s.cond.Signal()
+			fmt.Println("Signalled embedding added")
 			found = true
 			break
 		}
@@ -779,13 +795,22 @@ func (s *Server) embeddings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	fmt.Println("Waiting for embeddings to complete")
 	embedding := <-seq.embedding
+	fmt.Println("Embedding complete")
+
+	has_zeroes := slices.Contains(embedding, float32(0))
+	fmt.Printf("Has zeroes %t\n", has_zeroes)
+	fmt.Printf("Embeddings length: %d\n", len(embedding))
 
 	if err := json.NewEncoder(w).Encode(&EmbeddingResponse{
 		Embedding: embedding,
 	}); err != nil {
 		http.Error(w, fmt.Sprintf("failed to encode response: %v", err), http.StatusInternalServerError)
 	}
+	has_zeroes = slices.Contains(embedding, float32(0))
+	fmt.Printf("Has zeroes %t\n", has_zeroes)
+	fmt.Println("FINISHED RESPONDING")
 }
 
 type HealthResponse struct {
@@ -885,6 +910,7 @@ func (s *Server) loadModel(
 }
 
 func Execute(args []string) error {
+	fmt.Println("Hail")
 	if args[0] == "runner" {
 		args = args[1:]
 	}

@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -918,6 +919,9 @@ func (s *llmServer) Embedding(ctx context.Context, input string) ([]float32, err
 	if err := json.Unmarshal(body, &e); err != nil {
 		return nil, fmt.Errorf("unmarshal tokenize response: %w", err)
 	}
+
+	has_zeroes := slices.Contains(e.Embedding, float32(0))
+	fmt.Printf("Embedding -> Has zeroes: %t\n", has_zeroes)
 
 	return e.Embedding, nil
 }
