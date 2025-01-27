@@ -481,6 +481,9 @@ func (s *Server) processBatch(tokenBatch *llama.Batch, embedBatch *llama.Batch) 
 				embed = s.lc.GetEmbeddingsIth(seq.iBatch)
 			}
 
+			/*embedCopy := make([]float32, len(embed))
+			_ = copy(embedCopy, embed)
+			seq.embedding <- embedCopy*/
 			seq.embedding <- embed
 			s.removeSequence(i, "")
 			fmt.Println("Finished embeddings")
