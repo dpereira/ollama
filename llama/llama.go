@@ -204,6 +204,7 @@ func (c *Context) Decode(batch *Batch) error {
 	//   0 - success
 	//   1 - could not find a KV slot for the batch (try reducing the size of the batch or increase the context)
 	// < 0 - error
+	fmt.Println("DECODING BATCH")
 	code := int(C.llama_decode(c.c, batch.c))
 
 	if code < 0 {
@@ -213,6 +214,8 @@ func (c *Context) Decode(batch *Batch) error {
 	if code > 0 {
 		return ErrKvCacheFull
 	}
+
+	fmt.Println("DONE DECODING BATCH")
 
 	return nil
 }
@@ -416,10 +419,13 @@ func (b *Batch) IsEmbedding() bool {
 // batch with the given position for the given sequence ids, and optionally instructs
 // to include logits.
 func (b *Batch) Add(token int, embed []float32, pos int, logits bool, seqIds ...int) {
+	fmt.Printf("Adding Batch with tokens = %d", b.c.n_tokens)
 	if !b.IsEmbedding() {
 		unsafe.Slice(b.c.token, b.allocSize())[b.c.n_tokens] = C.llama_token(token)
 	} else {
+		fmt.Println("Copying slice")
 		copy(unsafe.Slice((*float32)(b.c.embd), b.allocSize()*b.embedSize)[int(b.c.n_tokens)*b.embedSize:], embed)
+		fmt.Println("Done Copying slice")
 	}
 	unsafe.Slice(b.c.pos, b.allocSize())[b.c.n_tokens] = C.llama_pos(pos)
 	unsafe.Slice(b.c.n_seq_id, b.allocSize())[b.c.n_tokens] = C.int(len(seqIds))
@@ -435,6 +441,7 @@ func (b *Batch) Add(token int, embed []float32, pos int, logits bool, seqIds ...
 	}
 
 	b.c.n_tokens += 1
+	fmt.Printf("Done Adding Batch with tokens = %d", b.c.n_tokens)
 }
 
 func (b *Batch) Clear() {

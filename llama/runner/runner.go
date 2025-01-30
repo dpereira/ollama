@@ -438,7 +438,9 @@ func (s *Server) processBatch(tokenBatch *llama.Batch, embedBatch *llama.Batch) 
 
 	s.lc.SetCrossAttention(crossAttention)
 
+	fmt.Fprintf(os.Stderr, "DECODING\n")
 	err := s.lc.Decode(batch)
+	fmt.Fprintf(os.Stderr, "DONE DECODING\n")
 	if err != nil {
 		return fmt.Errorf("failed to decode batch: %w", err)
 	}
@@ -448,6 +450,7 @@ func (s *Server) processBatch(tokenBatch *llama.Batch, embedBatch *llama.Batch) 
 		// needed specifically for multi-GPU systems otherwise an inflight
 		// task may be incorrectly invalidated causing a crash
 		s.lc.Synchronize()
+		fmt.Printf("Syncing")
 	}
 
 	for i, seq := range s.seqs {
@@ -475,9 +478,10 @@ func (s *Server) processBatch(tokenBatch *llama.Batch, embedBatch *llama.Batch) 
 		// if done processing the prompt, generate an embedding and return
 		if seq.embeddingOnly {
 			embed := s.lc.GetEmbeddingsSeq(seq.cache.Id)
-			fmt.Printf("GenEmbeddings 1")
+			fmt.Printf("GenEmbeddings 1\n")
 			if embed == nil {
-				fmt.Printf("GenEmbeddings 2")
+				fmt.Printf("GenEmbeddings 2\n")
+				fmt.Printf("IBATCH is %d\n", seq.iBatch)
 				embed = s.lc.GetEmbeddingsIth(seq.iBatch)
 			}
 
@@ -782,11 +786,11 @@ func (s *Server) embeddings(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, fmt.Sprintf("Failed to load cache: %v", err), http.StatusInternalServerError)
 				return
 			}
-			fmt.Printf("Adding sequence %d\n", i)
+			fmt.Printf("%d: Adding sequence %d\n", time.Now().UnixNano(), i)
 			s.seqs[i] = seq
-			fmt.Printf("Added sequence %d Signalling embedding added\n", i)
+			fmt.Printf("%d: Added sequence %d Signalling embedding added\n", time.Now().UnixNano(), i)
 			s.cond.Signal()
-			fmt.Println("Signalled embedding added")
+			fmt.Printf("%d: Signalled embedding added\n", time.Now().UnixNano())
 			found = true
 			break
 		}
@@ -798,13 +802,15 @@ func (s *Server) embeddings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Println("Waiting for embeddings to complete")
+	fmt.Fprintf(os.Stderr, "%d: Waiting for embeddings to complete", time.Now().UnixNano())
 	embedding := <-seq.embedding
-	fmt.Println("Embedding complete")
+	fmt.Fprintf(os.Stderr, "%d: Embedding complete @ %p", time.Now().UnixNano(), embedding)
 
 	has_zeroes := slices.Contains(embedding, float32(0))
-	fmt.Printf("Has zeroes %t\n", has_zeroes)
-	fmt.Printf("Embeddings length: %d\n", len(embedding))
+	fmt.Fprintf(os.Stderr, "%d: Has zeroes %t\n", time.Now().UnixNano(), has_zeroes)
+	fmt.Fprintf(os.Stderr, "%d: Embeddings length: %d\n", time.Now().UnixNano(), len(embedding))
+
+	fmt.Fprintf(os.Stderr, "%d: START RESPONDING with embedding @ %p\n", time.Now().UnixNano(), embedding)
 
 	if err := json.NewEncoder(w).Encode(&EmbeddingResponse{
 		Embedding: embedding,
@@ -812,8 +818,8 @@ func (s *Server) embeddings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("failed to encode response: %v", err), http.StatusInternalServerError)
 	}
 	has_zeroes = slices.Contains(embedding, float32(0))
-	fmt.Printf("Has zeroes %t\n", has_zeroes)
-	fmt.Println("FINISHED RESPONDING")
+	fmt.Fprintf(os.Stderr, "%d: Has zeroes %t\n", time.Now().UnixNano(), has_zeroes)
+	fmt.Fprintf(os.Stderr, "%d: FINISHED RESPONDING with embedding @ %p\n", time.Now().UnixNano(), embedding)
 }
 
 type HealthResponse struct {

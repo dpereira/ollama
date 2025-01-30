@@ -300,9 +300,11 @@ void llama_sbatch::from_batch(const llama_batch & batch, size_t n_embd, bool sim
 }
 
 llama_batch_allocr::llama_batch_allocr(struct llama_batch in_batch, llama_pos p0) {
+    fprintf(stderr, "llama_batch_allocr in\n");
     batch = in_batch;
     GGML_ASSERT(batch.n_tokens > 0);
     if (!batch.pos) {
+        fprintf(stderr, "!batch,pos\n");
         pos.resize(batch.n_tokens);
         for (int32_t i = 0; i < batch.n_tokens; i++) {
             pos[i] = i + p0;
@@ -310,6 +312,7 @@ llama_batch_allocr::llama_batch_allocr(struct llama_batch in_batch, llama_pos p0
         batch.pos = pos.data();
     }
     if (!batch.n_seq_id) {
+        fprintf(stderr, "!batch,n_seq_id\n");
         n_seq_id.resize(batch.n_tokens);
         for (int32_t i = 0; i < batch.n_tokens; i++) {
             n_seq_id[i] = seq_id_0.size();
@@ -317,6 +320,7 @@ llama_batch_allocr::llama_batch_allocr(struct llama_batch in_batch, llama_pos p0
         batch.n_seq_id = n_seq_id.data();
     }
     if (!batch.seq_id) {
+        fprintf(stderr, "!batch,seq_id\n");
         seq_id.resize(batch.n_tokens + 1);
         seq_id[batch.n_tokens] = NULL;
         for (int32_t i = 0; i < batch.n_tokens; i++) {
@@ -325,10 +329,12 @@ llama_batch_allocr::llama_batch_allocr(struct llama_batch in_batch, llama_pos p0
         batch.seq_id = seq_id.data();
     }
     if (!batch.logits) {
+        fprintf(stderr, "!batch,logits\n");
         logits.resize(batch.n_tokens);
         logits[logits.size() - 1] = true;
         batch.logits = logits.data();
     }
+    fprintf(stderr, "llama_batch_allocr out\n");
 }
 
 //

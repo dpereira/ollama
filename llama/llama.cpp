@@ -46,6 +46,7 @@
 #include <cassert>
 #include <cctype>
 #include <cfloat>
+#include <chrono>
 #include <cinttypes>
 #include <climits>
 #include <cmath>
@@ -11209,6 +11210,17 @@ static enum ggml_status llama_graph_compute(
     return status;
 }
 
+static unsigned long time_millis() {
+    // Get the current time from the system clock
+    auto now = std::chrono::system_clock::now();
+
+    // Convert to time since epoch
+    auto duration = now.time_since_epoch();
+
+    // Convert duration to milliseconds
+    return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+}
+
 // decode a batch of tokens by evaluating the transformer
 // in case of unsuccessful decoding (error or warning),
 // the kv_cache state will be returned to its original state
@@ -11224,16 +11236,20 @@ static enum ggml_status llama_graph_compute(
 static int llama_decode_internal(
          llama_context & lctx,
            llama_batch   inp_batch) {
+    LLAMA_LOG_INFO("%lu: INTO LLAMA DECODE INTERNAL\n", (unsigned long)time_millis());
 
     lctx.is_encoding = false;
 
     if (inp_batch.n_tokens == 0) {
         LLAMA_LOG_ERROR("%s: n_tokens == 0\n", __func__);
+        LLAMA_LOG_INFO("OUT OF DECODE INTERNAL (short-circuited)\n");
         return -1;
     }
 
+    LLAMA_LOG_INFO("%lu: INTO LLAMA BATCH ALLOCR\n", (unsigned long)time_millis());
     // temporary allocate memory for the input batch if needed
     llama_batch_allocr batch_allocr(inp_batch, inp_batch.pos ? -1 : lctx.kv_self.max_pos() + 1);
+    LLAMA_LOG_INFO("%lu: OUT OF LLAMA BATCH ALLOCR\n", (unsigned long)time_millis());
 
     const llama_batch & batch = batch_allocr.batch;
     const uint32_t n_tokens_all = batch.n_tokens;
@@ -11243,6 +11259,7 @@ static int llama_decode_internal(
     const auto & cparams = lctx.cparams;
 
     GGML_ASSERT((!batch.token && batch.embd) || (batch.token && !batch.embd)); // NOLINT
+    LLAMA_LOG_INFO("%lu: IN DECODE INTERNAL CHECKPOINT 1\n", (unsigned long)time_millis());
 
     if (batch.token) {
         for (uint32_t i = 0; i < n_tokens_all; ++i) {
@@ -11276,7 +11293,9 @@ static int llama_decode_internal(
     // this indicates we are doing pooled embedding, so we ignore batch.logits and output all tokens
     const bool embd_pooled = cparams.embeddings && cparams.pooling_type != LLAMA_POOLING_TYPE_NONE;
 
+    LLAMA_LOG_INFO("%lu: IN DECODE INTERNAL CHECKPOINT 2\n", (unsigned long)time_millis());
     lctx.embd_seq.clear();
+    LLAMA_LOG_INFO("%lu: IN DECODE INTERNAL CHECKPOINT 3\n", (unsigned long)time_millis());
 
     // count outputs
     if (batch.logits && !embd_pooled) {
@@ -11300,7 +11319,9 @@ static int llama_decode_internal(
         return -2;
     };
 
+    LLAMA_LOG_INFO("%lu: IN DECODE INTERNAL CHECKPOINT 4\n", (unsigned long)time_millis());
     while (lctx.sbatch.n_tokens > 0) {
+        LLAMA_LOG_INFO("%lu: IN DECODE INTERNAL CHECKPOINT 4.5 iteration\n", (unsigned long)time_millis());
         llama_ubatch ubatch;
         if (kv_self.recurrent) {
             if (embd_pooled) {
@@ -11314,6 +11335,7 @@ static int llama_decode_internal(
         } else {
             ubatch = lctx.sbatch.split_simple(n_ubatch);
         }
+        LLAMA_LOG_INFO("%lu: IN DECODE INTERNAL CHECKPOINT 4.5 iteration 1\n", (unsigned long)time_millis());
         const uint32_t n_tokens = ubatch.n_tokens;
 
         // count the outputs in this u_batch
@@ -11332,6 +11354,7 @@ static int llama_decode_internal(
             // needs to happen before the graph is built
             lctx.n_outputs = n_outputs_new;
         }
+        LLAMA_LOG_INFO("%lu: IN DECODE INTERNAL CHECKPOINT 4.5 iteration 2\n", (unsigned long)time_millis());
 
         int n_threads = n_tokens == 1 ? cparams.n_threads : cparams.n_threads_batch;
         ggml_threadpool_t threadpool = n_tokens == 1 ? lctx.threadpool : lctx.threadpool_batch;
@@ -11341,6 +11364,7 @@ static int llama_decode_internal(
         // non-causal masks do not use the KV cache
         if (hparams.causal_attn) {
             llama_kv_cache_update(&lctx);
+            LLAMA_LOG_INFO("%lu: IN DECODE INTERNAL CHECKPOINT 4.5 iteration 3\n", (unsigned long)time_millis());
 
             // if we have enough unused cells before the current head ->
             //   better to start searching from the beginning of the cache, hoping to fill it
@@ -11355,9 +11379,11 @@ static int llama_decode_internal(
                 slot = llama_kv_cache_find_slot(kv_self, ubatch);
             }
             if (!slot) {
+                LLAMA_LOG_INFO("OUT OF DECODING INTERNAL (slot)\n");
                 return 1;
             }
             kv_slot_restorer.save(slot);
+            LLAMA_LOG_INFO("%lu: IN DECODE INTERNAL CHECKPOINT 4.5 iteration 4\n", (unsigned long)time_millis());
 
             if (!kv_self.recurrent) {
                 // a heuristic, to avoid attending the full cache if it is not yet utilized
@@ -11410,6 +11436,7 @@ static int llama_decode_internal(
         const auto compute_status = llama_graph_compute(lctx, gf, n_threads, threadpool);
         if (compute_status != GGML_STATUS_SUCCESS) {
             kv_slot_restorer.restore(kv_self);
+            LLAMA_LOG_INFO("OUT OF DECODE INTERNAL (compute status)\n");
             switch (compute_status) {
                 case GGML_STATUS_ABORTED:
                     return 2;
@@ -11454,6 +11481,7 @@ static int llama_decode_internal(
 
         // extract embeddings
         if (embd) {
+            LLAMA_LOG_INFO("Extract embeddings\n");
             ggml_backend_t backend_embd = ggml_backend_sched_get_tensor_backend(lctx.sched.get(), embd);
             GGML_ASSERT(backend_embd != nullptr);
 
@@ -11508,8 +11536,10 @@ static int llama_decode_internal(
             }
         }
         n_outputs_prev += lctx.n_outputs;
+        LLAMA_LOG_INFO("%lu: IN DECODE INTERNAL CHECKPOINT 4.5 iteration end\n", (unsigned long)time_millis());
     }
 
+    LLAMA_LOG_INFO("%lu: IN DECODE INTERNAL CHECKPOINT 5\n", (unsigned long)time_millis());
     // set output mappings
     {
         bool sorted_output = true;
@@ -11529,6 +11559,7 @@ static int llama_decode_internal(
         }
     }
 
+    LLAMA_LOG_INFO("%lu: IN DECODE INTERNAL CHECKPOINT 6\n", (unsigned long)time_millis());
     // set to total number of outputs in the batch, for use in llama_get_logits_ith
     lctx.n_outputs = n_outputs;
 
@@ -11550,6 +11581,8 @@ static int llama_decode_internal(
     // Reset state for the next token before backend sync, to allow the CPU activities in the reset to
     // overlap with device computation.
     ggml_backend_sched_reset(lctx.sched.get());
+
+    LLAMA_LOG_INFO("OUT OF DECODING INTERNAL\n");
 
     return 0;
 }
@@ -12721,6 +12754,7 @@ int32_t llama_encode(
 int32_t llama_decode(
         struct llama_context * ctx,
           struct llama_batch   batch) {
+    LLAMA_LOG_INFO("%u INTO LLAMA DECODE\n", (unsigned)time_millis());
     const int ret = llama_decode_internal(*ctx, batch);
     if (ret != 0) {
         LLAMA_LOG_ERROR("%s: failed to decode, ret = %d\n", __func__, ret);

@@ -556,6 +556,8 @@ size_t llama_output_reserve(struct llama_context & lctx, size_t n_outputs) {
     lctx.logits = has_logits ? output_base               : nullptr;
     lctx.embd   = has_embd   ? output_base + logits_size : nullptr;
 
+    fprintf(stderr, "LCTX.EMBD change to %p\n", lctx.embd);
+
     lctx.output_size = n_outputs_max;
     lctx.logits_size = logits_size;
     lctx.embd_size   = embd_size;
@@ -563,7 +565,9 @@ size_t llama_output_reserve(struct llama_context & lctx, size_t n_outputs) {
     // set all ids as invalid (negative)
     std::fill(lctx.output_ids.begin(), lctx.output_ids.end(), -1);
 
+    fprintf(stderr, "GGML buffer clear %p\n", lctx.embd);
     ggml_backend_buffer_clear(lctx.buf_output.get(), 0);
+    fprintf(stderr, "GGML buffer clear done %p\n", lctx.embd);
 
     lctx.n_outputs = 0;
 
@@ -596,9 +600,11 @@ void llama_output_reorder(struct llama_context & ctx) {
                 }
             }
             if (ctx.embd_size > 0) {
+                fprintf(stderr, "SWAPPING ctx.embd\n");
                 for (uint32_t k = 0; k < n_embd; k++) {
                     std::swap(ctx.embd[i*n_embd + k], ctx.embd[j_min*n_embd + k]);
                 }
+                fprintf(stderr, "DONE SWAPPING ctx.embd\n");
             }
         }
         std::fill(ctx.output_ids.begin(), ctx.output_ids.end(), -1);

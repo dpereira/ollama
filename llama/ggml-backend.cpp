@@ -1911,6 +1911,7 @@ static void ggml_backend_cpu_buffer_set_tensor(ggml_backend_buffer_t buffer, str
 }
 
 static void ggml_backend_cpu_buffer_get_tensor(ggml_backend_buffer_t buffer, const struct ggml_tensor * tensor, void * data, size_t offset, size_t size) {
+    GGML_LOG_INFO("In GGML_BACKEND_CPU_BUFFER_GET_TENSOR\n");
     memcpy(data, (const char *)tensor->data + offset, size);
 
     GGML_UNUSED(buffer);
@@ -1927,7 +1928,9 @@ static bool ggml_backend_cpu_buffer_cpy_tensor(ggml_backend_buffer_t buffer, con
 }
 
 static void ggml_backend_cpu_buffer_clear(ggml_backend_buffer_t buffer, uint8_t value) {
+    fprintf(stderr, "CPU BUFFER CLEAR %p = %u for %u bytes\n", buffer->context, value, buffer->size);
     memset(buffer->context, value, buffer->size);
+    fprintf(stderr, "CPU BUFFER CLEAR DONE (memset done)\n");
 }
 
 static const struct ggml_backend_buffer_i ggml_backend_cpu_buffer_i = {
